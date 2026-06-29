@@ -1,0 +1,37 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Xcode user-specific state
+xcuserdata/
+*.xcuserstate
+*.xcuserdatad/
+
+# Xcode build artifacts
+build/
+DerivedData/
+*.xcworkspace/xcshareddata/swiftpm/configuration/
+*.moved-aside
+*.pbxuser
+!default.pbxuser
+
+# Swift Package Manager
+.swiftpm/
+Package.resolved
+.build/
+
+# CocoaPods / Carthage (not used here, but standard)
+Pods/
+Carthage/Build/
+
+# Generated docs
+.docc-build/
+
+# Editor cruft
+*.swp
+*.swo
+*~
+
+# Local plan/notes drafts
+*.draft.md
