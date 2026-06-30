@@ -33,7 +33,7 @@ final class JournalStore {
             #endif
             UserDefaults.standard.set(bookmark, forKey: bookmarkKey)
             journalRoot = url
-            try ensureFolderStructure(at: url)
+            ensureFolderStructure(at: url)
             refreshEntries()
         } catch {
             print("Failed to store journal root: \(error)")
@@ -60,17 +60,63 @@ final class JournalStore {
                 bookmarkDataIsStale: &isStale
             )
             #endif
+
+            #if os(macOS)
+            // A bookmark minted while the app only had read-only file access keeps
+            // granting read-only even after the entitlement becomes read-write.
+            // If we can't actually write, drop the bookmark so the app re-prompts
+            // for the folder and mints a fresh read-write bookmark.
+            guard isWritable(url) else {
+                print("Journal root resolved but is not writable; clearing bookmark to re-prompt for folder selection.")
+                url.stopAccessingSecurityScopedResource()
+                UserDefaults.standard.removeObject(forKey: bookmarkKey)
+                return
+            }
+            #endif
+
             journalRoot = url
-            try ensureFolderStructure(at: url)
+            ensureFolderStructure(at: url)
+
+            #if os(macOS)
+            if isStale,
+               let fresh = try? url.bookmarkData(
+                   options: .withSecurityScope,
+                   includingResourceValuesForKeys: nil,
+                   relativeTo: nil
+               ) {
+                UserDefaults.standard.set(fresh, forKey: bookmarkKey)
+            }
+            #endif
+            print("Journal root is writable: \(url.path)")
         } catch {
             print("Failed to resolve stored journal root: \(error)")
         }
     }
 
-    private func ensureFolderStructure(at root: URL) throws {
+    /// Probes whether the app can actually create a file under the journal root.
+    /// Used to detect a stale read-only security-scoped bookmark.
+    private func isWritable(_ root: URL) -> Bool {
         let fm = FileManager.default
-        for sub in ["entries", "attachments", "imports/raw", ".journal"] {
-            try fm.createDirectory(
+        let dir = root.appendingPathComponent(".journal", isDirectory: true)
+        let probe = dir.appendingPathComponent(".writeprobe")
+        do {
+            try? fm.createDirectory(at: dir, withIntermediateDirectories: true)
+            try "ok".write(to: probe, atomically: true, encoding: .utf8)
+            try? fm.removeItem(at: probe)
+            return true
+        } catch {
+            return false
+        }
+    }
+
+    private func ensureFolderStructure(at root: URL) {
+        // Best-effort: never throw here. The journal often lives on a cloud
+        // volume (iCloud, ProtonDrive, …) where creating a not-yet-existing
+        // folder can fail with "Operation not permitted". A failure must not
+        // abort resolving the root or poison writes for the rest of the session.
+        let fm = FileManager.default
+        for sub in ["entries", "images", "media", "attachments", "imports/raw", ".journal"] {
+            try? fm.createDirectory(
                 at: root.appendingPathComponent(sub),
                 withIntermediateDirectories: true
             )
@@ -85,22 +131,28 @@ final class JournalStore {
             .appendingPathComponent("\(entry.id).md")
     }
 
-    func attachmentsDir(for entry: JournalEntry) -> URL? {
+    func mediaDir(for entry: JournalEntry, subfolder: String) -> URL? {
         guard let root = journalRoot else { return nil }
         let (year, month) = routingPath(for: entry)
         return root.appendingPathComponent(
-            "attachments/\(year)/\(month)/\(entry.id)",
+            "\(subfolder)/\(year)/\(month)/\(entry.id)",
             isDirectory: true
         )
     }
 
-    func copyAttachment(from source: URL, for entry: JournalEntry) throws -> String {
-        guard let dir = attachmentsDir(for: entry) else { throw StoreError.notConfigured }
+    func attachmentsDir(for entry: JournalEntry) -> URL? {
+        mediaDir(for: entry, subfolder: "images")
+    }
+
+    /// Copies a file into the entry's folder under `subfolder` (`images` for
+    /// pictures, `media` for audio/video) and returns the journal-relative path.
+    func copyAttachment(from source: URL, for entry: JournalEntry, subfolder: String = "images") throws -> String {
+        guard let dir = mediaDir(for: entry, subfolder: subfolder) else { throw StoreError.notConfigured }
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let dest = uniqueDestination(in: dir, filename: source.lastPathComponent)
         try FileManager.default.copyItem(at: source, to: dest)
         let (year, month) = routingPath(for: entry)
-        return "attachments/\(year)/\(month)/\(entry.id)/\(dest.lastPathComponent)"
+        return "\(subfolder)/\(year)/\(month)/\(entry.id)/\(dest.lastPathComponent)"
     }
 
     private func routingPath(for entry: JournalEntry) -> (year: String, month: String) {
@@ -135,6 +187,28 @@ final class JournalStore {
         try FrontmatterCodec.encode(entry).write(to: url, atomically: true, encoding: .utf8)
         clearRecovery(for: entry)
         refreshEntries()
+    }
+
+    /// Changes an entry's date. Because the on-disk path is routed by the
+    /// created date (year/month), this re-saves at the new location and removes
+    /// the old file. The entry's `id` is kept stable as its identity.
+    func reschedule(_ entry: JournalEntry, to newDate: Date) -> JournalEntry {
+        let oldURL = fileURL(for: entry)
+        var updated = entry
+        updated.created = newDate
+        updated.modified = Date()
+        do {
+            try save(updated)
+            if let oldURL, let newURL = fileURL(for: updated),
+               oldURL.standardizedFileURL != newURL.standardizedFileURL,
+               FileManager.default.fileExists(atPath: oldURL.path) {
+                try? FileManager.default.removeItem(at: oldURL)
+                refreshEntries()
+            }
+        } catch {
+            print("Reschedule failed: \(error)")
+        }
+        return updated
     }
 
     func writeRecovery(_ entry: JournalEntry) {

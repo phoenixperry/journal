@@ -32,6 +32,9 @@ final class AppSettings {
     var fontSize: Double {
         didSet { UserDefaults.standard.set(fontSize, forKey: Self.fontSizeKey) }
     }
+    var lineHeight: Double {
+        didSet { UserDefaults.standard.set(lineHeight, forKey: Self.lineHeightKey) }
+    }
     var accentRed: Double {
         didSet { UserDefaults.standard.set(accentRed, forKey: Self.accentRedKey) }
     }
@@ -44,6 +47,7 @@ final class AppSettings {
 
     private static let fontStyleKey = "EditorFontStyle"
     private static let fontSizeKey = "EditorFontSize"
+    private static let lineHeightKey = "EditorLineHeight"
     private static let accentRedKey = "AccentColorRed"
     private static let accentGreenKey = "AccentColorGreen"
     private static let accentBlueKey = "AccentColorBlue"
@@ -53,6 +57,8 @@ final class AppSettings {
         self.fontStyle = EditorFontStyle(rawValue: raw) ?? .serif
         let size = UserDefaults.standard.double(forKey: Self.fontSizeKey)
         self.fontSize = size > 0 ? size : 16
+        let storedLineHeight = UserDefaults.standard.double(forKey: Self.lineHeightKey)
+        self.lineHeight = storedLineHeight > 0 ? storedLineHeight : 1.2
 
         let defaults = UserDefaults.standard
         self.accentRed = (defaults.object(forKey: Self.accentRedKey) as? Double) ?? 0.93

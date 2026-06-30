@@ -24,6 +24,7 @@ struct ImportView: View {
 
     private static let supportedExtensions: Set<String> = [
         "docx", "doc", "rtf", "rtfd", "odt",
+        "pdf",
         "txt", "md", "markdown",
         "html", "htm"
     ]
@@ -82,7 +83,7 @@ struct ImportView: View {
                 .foregroundStyle(.secondary)
             Text("Import from a file or folder")
                 .font(.title3)
-            Text("File: pick one .docx, .txt, .html, or similar.\nFolder: every supported file inside is imported.")
+            Text("File: pick one .docx, .pdf, .txt, .html, or similar.\nFolder: every supported file inside is imported.")
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
